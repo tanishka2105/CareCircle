@@ -44,21 +44,13 @@ export const createApp = () => {
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:5000',
-    
+
   ];
 
   app.use(
     cors({
-      origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || env.NODE_ENV === 'production') {
-          callback(null, true);
-        } else {
-          callback(new Error('CORS not allowed for this origin'));
-        }
-      },
+      origin: true,
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Cron-Secret', 'x-cron-secret'],
     })
   );
 
