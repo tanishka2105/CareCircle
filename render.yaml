@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: carecircle
+    runtime: node
+    plan: free
+    buildCommand: cd client && npm install --include=dev && npm run build && cd ../server && npm install
+    startCommand: cd server && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CLIENT_URL
+        sync: false
+      # Baaki sab apni server/.env se Render dashboard mein daalo
+      # (Firebase, JWT/session secret, SMTP, GEMINI_API_KEY, CRON_SECRET).
+      # Unke names wahi rakho jo server/src/config/env.js mein hain.

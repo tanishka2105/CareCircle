@@ -21,6 +21,7 @@ import {
   Menu,
   X,
   WifiOff,
+  Activity,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
@@ -90,6 +91,7 @@ export const AppLayout = () => {
     { to: '/app/circle', label: t('nav.circle'), icon: Users },
     { to: '/app/reports', label: t('nav.reports'), icon: LineChart },
     { to: '/app/notes', label: t('nav.notes'), icon: StickyNote },
+    { to: '/app/activity', label: t('nav.activity'), icon: Activity },
     { to: '/app/elder', label: t('nav.elderMode'), icon: HeartHandshake, highlight: true },
     { to: '/app/invite', label: t('nav.invite'), icon: UserPlus },
     { to: '/app/pricing', label: t('nav.pricing'), icon: Sparkles },

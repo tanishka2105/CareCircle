@@ -16,6 +16,10 @@ import appointmentRoutes from './routes/appointmentRoutes.js';
 import cronRoutes from './routes/cronRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 
+import noteRoutes from './routes/noteRoutes.js';
+import activityRoutes from './routes/activityRoutes.js';
+import reportsRoutes from './routes/reportsRoutes.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -84,6 +88,9 @@ export const createApp = () => {
   app.use('/api', doseRoutes);
   app.use('/api', appointmentRoutes);
   app.use('/api', notificationRoutes);
+  app.use('/api/notes', noteRoutes);
+  app.use('/api/activity', activityRoutes);
+  app.use('/api/reports', reportsRoutes);
 
   // Serve static client assets in production
   if (env.NODE_ENV === 'production') {

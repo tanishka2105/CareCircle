@@ -33,7 +33,7 @@ export const requireAuth = async (req, res, next) => {
     }
 
     const db = getDb();
-    
+
     // Fetch profile
     const profileDoc = await db.collection('profiles').doc(decoded.profileId).get();
     if (!profileDoc.exists) {
@@ -90,6 +90,14 @@ export const requireAuth = async (req, res, next) => {
     req.isAdmin = Boolean(member.isAdmin);
     req.member = member;
     req.profile = profile;
+
+    // Unified identity object used by notes / activity controllers
+    req.user = {
+      profileId: decoded.profileId,
+      memberId: decoded.memberId,
+      memberName: member.displayName || member.name || 'Member',
+      isAdmin: Boolean(member.isAdmin),
+    };
 
     // Asynchronously update last active time without blocking
     db.collection('members').doc(decoded.memberId).update({

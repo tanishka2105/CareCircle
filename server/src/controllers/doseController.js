@@ -1,13 +1,57 @@
 import { z } from 'zod';
 import { getDb } from '../config/db.js';
+import { logActivity } from './activityController.js';
+
+const UNDO_WINDOW_MINUTES = 15;
 
 const updateDoseStatusSchema = z.object({
   status: z.enum(['taken', 'skipped', 'undo']),
 });
 
 const handleDoseSchema = z.object({
-  note: z.string().optional().default(''),
+  note: z.string().max(300, 'Note too long').optional().default(''),
 });
+
+// Atomically adjust stock. Returns { med, before, after } or null if med not found.
+const adjustStock = async (db, medicationId, delta) => {
+  if (!medicationId) return null;
+  const medRef = db.collection('medications').doc(medicationId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(medRef);
+    if (!snap.exists) return null;
+    const med = snap.data();
+    const before = med.stockCount || 0;
+    const after = Math.max(0, before + delta);
+    tx.update(medRef, { stockCount: after });
+    return { med, before, after };
+  });
+};
+
+// Create an in-app notification for every member of the circle (optionally skipping one)
+const notifyMembers = async (db, profileId, { excludeMemberId = null, type, title, body, meta = {} }) => {
+  const membersSnap = await db.collection('members').where('profileId', '==', profileId).get();
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  let count = 0;
+
+  membersSnap.docs.forEach((m) => {
+    if (m.id === excludeMemberId) return;
+    batch.set(db.collection('notifications').doc(), {
+      profileId,
+      memberId: m.id,
+      type,
+      title,
+      body,
+      isRead: false,
+      readAt: null,
+      createdAt: now,
+      meta,
+    });
+    count++;
+  });
+
+  if (count > 0) await batch.commit();
+};
 
 export const getDoses = async (req, res, next) => {
   try {
@@ -18,20 +62,18 @@ export const getDoses = async (req, res, next) => {
 
     if (date) {
       query = query.where('scheduledDate', '==', date);
+    } else if (startDate && endDate) {
+      // Needs composite index: profileId ASC + scheduledDate ASC (same one reports use)
+      query = query
+        .where('scheduledDate', '>=', startDate)
+        .where('scheduledDate', '<=', endDate);
     }
 
     const dosesSnap = await query.get();
-    let doses = dosesSnap.docs.map((doc) => ({
+    const doses = dosesSnap.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
-
-    // If date range specified
-    if (startDate && endDate) {
-      doses = doses.filter(
-        (d) => d.scheduledDate >= startDate && d.scheduledDate <= endDate
-      );
-    }
 
     // Sort by scheduledAtUtc ascending
     doses.sort((a, b) => (a.scheduledAtUtc > b.scheduledAtUtc ? 1 : -1));
@@ -63,6 +105,12 @@ export const updateDoseStatus = async (req, res, next) => {
 
     const currentDose = doseDoc.data();
     const now = new Date().toISOString();
+    const memberName = req.member.displayName;
+    const doseMeta = {
+      doseId: id,
+      medicationName: currentDose.medicationName,
+      scheduledTime: currentDose.scheduledTime,
+    };
 
     // 1. UNDO Action (within 15 minutes window)
     if (status === 'undo') {
@@ -73,109 +121,99 @@ export const updateDoseStatus = async (req, res, next) => {
         });
       }
 
-      const markedTime = new Date(currentDose.markedAt).getTime();
-      const diffMinutes = (Date.now() - markedTime) / (60 * 1000);
-      if (diffMinutes > 15) {
+      const diffMinutes = (Date.now() - new Date(currentDose.markedAt).getTime()) / (60 * 1000);
+      if (diffMinutes > UNDO_WINDOW_MINUTES) {
         return res.status(400).json({
           success: false,
-          error: { message: 'Undo window of 15 minutes has expired.', code: 'UNDO_EXPIRED' },
+          error: {
+            message: `Undo window of ${UNDO_WINDOW_MINUTES} minutes has expired.`,
+            code: 'UNDO_EXPIRED',
+          },
         });
       }
 
       // If it was marked 'taken', restore stock
-      if (currentDose.status === 'taken' && currentDose.medicationId) {
-        const medRef = db.collection('medications').doc(currentDose.medicationId);
-        const medDoc = await medRef.get();
-        if (medDoc.exists) {
-          const currentStock = medDoc.data().stockCount || 0;
-          await medRef.update({ stockCount: currentStock + 1 });
-        }
+      if (currentDose.status === 'taken') {
+        await adjustStock(db, currentDose.medicationId, +1);
       }
 
-      await doseRef.update({
+      const resetPayload = {
         status: 'pending',
         markedBy: null,
         markedByName: null,
         markedAt: null,
-      });
+      };
+      await doseRef.update(resetPayload);
 
-      // Log activity
-      await db.collection('activity').add({
-        profileId: req.profileId,
-        actorId: req.memberId,
-        action: 'undid_dose',
-        entityType: 'dose',
-        entityId: id,
-        details: { medicationName: currentDose.medicationName, scheduledTime: currentDose.scheduledTime },
-        createdAt: now,
-      });
+      await logActivity(
+        db,
+        req.profileId,
+        req.memberId,
+        memberName,
+        'dose_undone',
+        `${memberName} undid ${currentDose.medicationName}`,
+        doseMeta
+      );
 
-      const updatedSnap = await doseRef.get();
       return res.status(200).json({
         success: true,
-        data: updatedSnap.data(),
+        data: { id, ...currentDose, ...resetPayload },
       });
     }
 
-    // 2. MARK AS TAKEN OR SKIPPED
+    // 2. Idempotent: already in this state -> do nothing (prevents double stock decrement)
+    if (currentDose.status === status) {
+      return res.status(200).json({
+        success: true,
+        data: { id, ...currentDose },
+      });
+    }
+
+    // 3. MARK AS TAKEN OR SKIPPED
     const updatePayload = {
       status,
       markedBy: req.memberId,
-      markedByName: req.member.displayName,
+      markedByName: memberName,
       markedAt: now,
     };
 
     await doseRef.update(updatePayload);
 
-    // If taken, decrement stock
-    if (status === 'taken' && currentDose.medicationId) {
-      const medRef = db.collection('medications').doc(currentDose.medicationId);
-      const medDoc = await medRef.get();
+    // Stock bookkeeping
+    if (status === 'taken') {
+      const result = await adjustStock(db, currentDose.medicationId, -1);
 
-      if (medDoc.exists) {
-        const medData = medDoc.data();
-        const currentStock = medData.stockCount || 0;
-        const newStock = Math.max(0, currentStock - 1);
-        await medRef.update({ stockCount: newStock });
-
-        // Check refill threshold
-        if (newStock <= (medData.refillThreshold || 5) && currentStock > (medData.refillThreshold || 5)) {
-          // Trigger low stock notification
-          const membersSnap = await db.collection('members').where('profileId', '==', req.profileId).get();
-          membersSnap.forEach(async (memberDoc) => {
-            await db.collection('notifications').add({
-              profileId: req.profileId,
-              memberId: memberDoc.id,
-              type: 'stock',
-              title: `Low Stock: ${medData.name}`,
-              body: `Only ${newStock} pills remaining for ${medData.name}. Please plan a refill soon.`,
-              readAt: null,
-              createdAt: now,
-            });
+      if (result) {
+        const threshold = result.med.refillThreshold || 5;
+        if (result.after <= threshold && result.before > threshold) {
+          await notifyMembers(db, req.profileId, {
+            type: 'stock',
+            title: `Low Stock: ${result.med.name}`,
+            body: `Only ${result.after} pills remaining for ${result.med.name}. Please plan a refill soon.`,
+            meta: { medicationId: currentDose.medicationId },
           });
         }
       }
+    } else if (currentDose.status === 'taken') {
+      // taken -> skipped: give the pill back
+      await adjustStock(db, currentDose.medicationId, +1);
     }
 
-    // Log Activity
-    await db.collection('activity').add({
-      profileId: req.profileId,
-      actorId: req.memberId,
-      action: status === 'taken' ? 'took_dose' : 'skipped_dose',
-      entityType: 'dose',
-      entityId: id,
-      details: {
-        medicationName: currentDose.medicationName,
-        scheduledTime: currentDose.scheduledTime,
-        markedByName: req.member.displayName,
-      },
-      createdAt: now,
-    });
+    await logActivity(
+      db,
+      req.profileId,
+      req.memberId,
+      memberName,
+      status === 'taken' ? 'dose_taken' : 'dose_skipped',
+      status === 'taken'
+        ? `${memberName} marked ${currentDose.medicationName} as taken`
+        : `${memberName} skipped ${currentDose.medicationName}`,
+      doseMeta
+    );
 
-    const updatedSnap = await doseRef.get();
     return res.status(200).json({
       success: true,
-      data: updatedSnap.data(),
+      data: { id, ...currentDose, ...updatePayload },
     });
   } catch (err) {
     next(err);
@@ -199,52 +237,64 @@ export const handleMissedDose = async (req, res, next) => {
     }
 
     const currentDose = doseDoc.data();
+
+    if (currentDose.status !== 'missed') {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Only missed doses can be handled.', code: 'NOT_MISSED' },
+      });
+    }
+
+    // Someone else already claimed it -> tell this member who
+    if (currentDose.handledBy && currentDose.handledBy !== req.memberId) {
+      return res.status(409).json({
+        success: false,
+        error: {
+          message: `${currentDose.handledByName || 'Another member'} is already handling this dose.`,
+          code: 'ALREADY_HANDLED',
+        },
+      });
+    }
+
     const now = new Date().toISOString();
+    const memberName = req.member.displayName;
 
     const updatePayload = {
       handledBy: req.memberId,
-      handledByName: req.member.displayName,
+      handledByName: memberName,
       handledAt: now,
       handledNote: note || 'Handling confirmed',
     };
 
     await doseRef.update(updatePayload);
 
-    // Activity log
-    await db.collection('activity').add({
-      profileId: req.profileId,
-      actorId: req.memberId,
-      action: 'handled_missed_dose',
-      entityType: 'dose',
-      entityId: id,
-      details: {
+    await logActivity(
+      db,
+      req.profileId,
+      req.memberId,
+      memberName,
+      'missed_dose_handled',
+      `${memberName} is handling the missed ${currentDose.medicationName} dose`,
+      {
+        doseId: id,
         medicationName: currentDose.medicationName,
-        handler: req.member.displayName,
+        scheduledTime: currentDose.scheduledTime,
         note: updatePayload.handledNote,
-      },
-      createdAt: now,
-    });
+      }
+    );
 
     // Notify other circle members so nobody duplicates effort
-    const membersSnap = await db.collection('members').where('profileId', '==', req.profileId).get();
-    membersSnap.forEach(async (doc) => {
-      if (doc.id !== req.memberId) {
-        await db.collection('notifications').add({
-          profileId: req.profileId,
-          memberId: doc.id,
-          type: 'missed_dose_handled',
-          title: 'Missed Dose Acknowledged',
-          body: `${req.member.displayName} acknowledged missed ${currentDose.medicationName}: "${updatePayload.handledNote}"`,
-          readAt: null,
-          createdAt: now,
-        });
-      }
+    await notifyMembers(db, req.profileId, {
+      excludeMemberId: req.memberId,
+      type: 'missed_dose_handled',
+      title: 'Missed Dose Acknowledged',
+      body: `${memberName} is handling missed ${currentDose.medicationName}: "${updatePayload.handledNote}"`,
+      meta: { doseId: id },
     });
 
-    const updatedSnap = await doseRef.get();
     return res.status(200).json({
       success: true,
-      data: updatedSnap.data(),
+      data: { id, ...currentDose, ...updatePayload },
     });
   } catch (err) {
     next(err);

@@ -11,6 +11,7 @@ import { MedicationsPage } from './pages/MedicationsPage.jsx';
 import { AppointmentsPage } from './pages/AppointmentsPage.jsx';
 import { ReportsPage } from './pages/ReportsPage.jsx';
 import { NotesPage } from './pages/NotesPage.jsx';
+import { ActivityPage } from './pages/ActivityPage.jsx';
 import { ElderModePage } from './pages/ElderModePage.jsx';
 import { PricingPage } from './pages/PricingPage.jsx';
 import { InvitePage } from './pages/InvitePage.jsx';
@@ -102,6 +103,7 @@ export const App = () => {
         <Route path="circle" element={<CircleDirectoryPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="notes" element={<NotesPage />} />
+        <Route path="activity" element={<ActivityPage />} />
         <Route path="elder" element={<ElderModePage />} />
         <Route path="pricing" element={<PricingPage />} />
         <Route path="invite" element={<InvitePage />} />
