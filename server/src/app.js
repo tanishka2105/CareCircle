@@ -95,16 +95,14 @@ export const createApp = () => {
 
   // Serve static client assets in production
   const clientDistPath = path.resolve(__dirname, '../../client/dist');
-  if (env.NODE_ENV === 'production' || fs.existsSync(clientDistPath)) {
-    app.use(express.static(clientDistPath));
+  app.use(express.static(clientDistPath));
 
-    app.get('*', (req, res, next) => {
-      if (req.path.startsWith('/api')) {
-        return next();
-      }
-      res.sendFile(path.join(clientDistPath, 'index.html'));
-    });
-  }
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
 
   // Not Found & Error Handlers
   app.use(notFoundHandler);
