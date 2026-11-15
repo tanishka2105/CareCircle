@@ -5,7 +5,7 @@ dotenv.config();
 
 const envSchema = z.object({
   PORT: z.string().default('5000'),
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('production'),
   CLIENT_URL: z.string().default('http://localhost:5173'),
   JWT_SECRET: z.string().default('carecircle-super-secret-jwt-key-min-32-chars-long!'),
   CRON_SECRET: z.string().default('carecircle-cron-secret-token-for-tick-api'),
