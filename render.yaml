@@ -4,13 +4,14 @@ services:
     runtime: node
     plan: free
     buildCommand: cd client && npm install --include=dev && npm run build && cd ../server && npm install
-    startCommand: cd server && npm start
+    startCommand: cd server && npm run start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: https://carecircle-o10i.onrender.com
-        sync: false
+      - key: CLIENT_URL
+        value: https://carecircle-o10i.onrender.com
+
       # Baaki sab apni server/.env se Render dashboard mein daalo
       # (Firebase, JWT/session secret, SMTP, GEMINI_API_KEY, CRON_SECRET).
       # Unke names wahi rakho jo server/src/config/env.js mein hain.
