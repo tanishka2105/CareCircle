@@ -139,8 +139,8 @@ External cron ── X-Cron-Secret ──▶ /api/cron/*  (reminders, missed-dos
 
 ```bash
 # 1. Clone
-git clone https://github.com/[your-username]/[your-repo].git
-cd [your-repo]
+git clone https://github.com/tanishka2105/CareCircle.git
+cd https://github.com/tanishka2105/CareCircle.git
 
 # 2. Server
 cd server
@@ -194,7 +194,7 @@ Reminders and missed-dose checks run through endpoints protected by the `X-Cron-
 | Setting | Value |
 |---|---|
 | URL | `https://carecircle-o10i.onrender.com/api/cron/[endpoint]` |
-| Header | `X-Cron-Secret: <your CRON_SECRET>` |
+| Header | `X-Cron-Secret: carecircle-cron-1a2b3c4d5e6f7g8h9i0j` |
 | Schedule | Every 5 minutes |
 
 The exact endpoint paths are in `server/src/routes/cronRoutes.js`. Pinging the server regularly also keeps the free Render instance awake.
