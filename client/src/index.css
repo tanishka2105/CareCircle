@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-scale: 1;
+  }
+  
+  html {
+    font-size: 18px; /* High accessibility base font size */
+    scroll-behavior: smooth;
+  }
+
+  html.font-large {
+    font-size: 20px;
+  }
+
+  html.font-xlarge {
+    font-size: 22px;
+  }
+
+  /* High contrast mode */
+  html.theme-contrast {
+    filter: contrast(125%);
+  }
+
+  /* Focus rings for full keyboard accessibility */
+  *:focus-visible {
+    outline: 3px solid #0d9488;
+    outline-offset: 2px;
+  }
+}
+
+/* Custom Healthcare Touch Target Utilities */
+.tap-target {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}
