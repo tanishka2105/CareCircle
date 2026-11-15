@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { env } from './config/env.js';
 import { generalLimiter } from './middleware/rateLimiter.js';
@@ -93,8 +94,8 @@ export const createApp = () => {
   app.use('/api/reports', reportsRoutes);
 
   // Serve static client assets in production
-  if (env.NODE_ENV === 'production') {
-    const clientDistPath = path.resolve(__dirname, '../../client/dist');
+  const clientDistPath = path.resolve(__dirname, '../../client/dist');
+  if (env.NODE_ENV === 'production' || fs.existsSync(clientDistPath)) {
     app.use(express.static(clientDistPath));
 
     app.get('*', (req, res, next) => {
