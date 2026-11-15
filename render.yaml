@@ -9,7 +9,7 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: CLIENT_URL
+      - key: https://carecircle-o10i.onrender.com
         sync: false
       # Baaki sab apni server/.env se Render dashboard mein daalo
       # (Firebase, JWT/session secret, SMTP, GEMINI_API_KEY, CRON_SECRET).
